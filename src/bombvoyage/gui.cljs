@@ -12,11 +12,7 @@
 (enable-console-print!)
 
 (def MY-ID 21)
-(def game-state
-  (r/atom
-    (-> (g/rand-game)
-        (g/add-player 73)
-        (g/add-player 21))))
+(def game-state (r/atom (g/rand-game)))
 
 (defn render-wood [[x y]] ^{:key (str [x y])}
   [:rect {:x (* g/TILE-SIZE x)
@@ -162,6 +158,7 @@
           (>! ws-channel [action game-id])
           (loop []
             (let [[v p] (alts! [ws-channel events-chan])]
+              (println v)
               (if (= ws-channel p)
                 (reset! game-state (second (:message v)))
                 (>! ws-channel v)))

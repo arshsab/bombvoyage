@@ -48,6 +48,7 @@
         length-ups
           (rand-subset POWER-UPS (s/difference woods bomb-ups))]
     {:tick 0
+     :type :game
      :stones stones
      :woods woods
      :bomb-ups bomb-ups

@@ -44,7 +44,7 @@
 
 (defn game-loop [init-state in out sub]
   (go-loop [state init-state players #{}]
-    (match (log (<! in))
+    (match (<! in)
       [:join pid pchan]
           (if-let [nex (join-game state pid)]
             (do (subscribe pid pchan sub)
@@ -53,7 +53,7 @@
             (do (close! pchan)
                 (recur state players)))
       [:close pid]
-          (let [nex (leave-game state)
+          (let [nex (leave-game state pid)
                 nex-players (s/difference players #{pid})]
             (>! out [:set-state nex])
             (when-not (empty? nex-players)
@@ -80,7 +80,9 @@
     (submit-tick in (tick-len init-state))
     in))
 
-(defmethod join-game :game [_ _] nil)
+(defmethod join-game :game [game pid]
+  (when (< (count (:players game)) g/MAX-PLAYERS)
+    (g/add-player game pid)))
 
 (defmethod tick-len :game [_] g/TICK-LEN)
 (defmethod tick :game [game] (g/tick game))

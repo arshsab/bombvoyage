@@ -88,6 +88,12 @@
     (start-game-loop
       game-id init-state game-chan-in game-chan-out game-sub)))
 
+(defn make-game-2 [game-id pid pchan]
+  (let [completion-fn #(swap! game-tokens dissoc game-id)
+        game-in (l/run-game-loop (g/rand-game) completion-fn)]
+    (swap! game-tokens assoc game-id game-in)
+    (go (>! game-in [:join pid pchan]))))
+
 (defn sock-handler
   "Handles incoming websockets."
   [req]
@@ -97,7 +103,7 @@
         (>! ws-ch [:set-id player-id])
         (match (:message (<! ws-ch))
           [:create game-id]
-               (make-game game-id player-id ws-ch)
+               (make-game-2 game-id player-id ws-ch)
           [:join game-id]
                (if-let [game-in (@game-tokens game-id)]
                  (>! game-in [:join player-id ws-ch])))))))
