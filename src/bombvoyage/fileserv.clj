@@ -4,18 +4,20 @@
             [compojure.handler :refer [site]]
             [clojure.core.async :refer [thread <!! timeout]]
             [clj-http.client :as client]
+            [clj-time.core :as t]
+            [clj-jwt.core :refer :all]
             [compojure.route :as route]
             [hiccup.core :refer [html]]
             [bombvoyage.game :as g]))
 
 (def game-ticker (atom 0))
 (def games (atom {}))
-(def game-servers ["localhost:8081"])
+(def ^:dynamic *game-servers* [])
 
 (defn start-game-update-loop []
   (thread
     (loop []
-      (->> game-servers
+      (->> *game-servers*
            (map #(str "http://" %))
            (map client/get)
            (map :body)
@@ -33,34 +35,38 @@
               :type "text/css"
               :href "https://maxcdn.bootstrapcdn.com/bootswatch/3.3.7/cyborg/bootstrap.min.css"}]]
      [:body {:font-size "250%"}
-      [:div.container
-       [:div.page-header [:h1 "BombVoyage"]]
-       body]]]))
+       body]]))
 
 (defn index []
   (wrap-body
-    [:div
+    [:div.container
+      [:div.page-header [:h1 "BombVoyage"]]
       [:p.text-center [:a.btn.btn-success {:type :button :href "/create"} "Create"]]
       (for [[game-id _] @games]
         [:p.text-center [:a.btn.btn-info
           {:href (str "/game/" game-id)}
           "Join Game #" game-id]])]))
 
-(defn game-screen [token]
-  (wrap-body
-     [:div.text-center
-      [:span#data {:data-game-info (prn-str token)}]
-      [:div#app]
-      [:script {:src "/main.js"}]]))
+(defn game-screen [token server]
+  (let [payload
+          {:game-token token
+           :exp (t/plus (t/now) (t/seconds 5))}
+        encoded (-> payload jwt (sign "secret2") to-str)]
+    (wrap-body
+       [:div.text-center
+        [:span#data {:data-game-server server
+                     :data-game-info encoded}]
+        [:div#app]
+        [:script {:src "/main.js"}]])))
 
 (defn create []
   (let [game-id (swap! game-ticker inc)
-        server (rand-nth game-servers)]
-    (game-screen [:create (str "ws://" server "/ws") game-id])))
+        server (rand-nth *game-servers*)]
+    (game-screen [:create game-id] (str "ws://" server "/ws"))))
 
 (defn join [game-id]
   (let [server (@games game-id)]
-    (game-screen [:join (str "ws://" server "/ws") game-id])))
+    (game-screen [:join game-id] (str "ws://" server "/ws"))))
 
 (defroutes app-routes
   (GET "/" [] (index))
@@ -71,9 +77,12 @@
 
 (def handler (site #'app-routes))
 
-(defn run []
+(defn run [config]
   (do
+    (alter-var-root
+      (var *game-servers*)
+      (fn [_] (:game-servers config)))
     (start-game-update-loop)
     (run-server
       handler
-      {:port 8080})))
+      {:port (:port config)})))

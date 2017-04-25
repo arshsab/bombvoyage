@@ -84,20 +84,19 @@
    [:rect {:width (* g/TILE-SIZE g/WIDTH)
            :height (* g/TILE-SIZE g/HEIGHT)
            :fill "#8cff8c"}]
-   [:g
-    (map render-length-up (:length-ups game-state))]
-   [:g
-    (map render-bomb-up (:bomb-ups game-state))]
-   [:g
-    (map render-stone (:stones game-state))]
-   [:g
-    (map render-wood (:woods game-state))]
-   [:g
-    (map render-bomb (vals (:bombs game-state)))]
-   [:g
-    (map render-explosion (:explosions game-state))]
-   [:g
-    (map render-player (vals (:players game-state)))]])
+   [:g (map render-length-up (:length-ups game-state))]
+   [:g (map render-bomb-up (:bomb-ups game-state))]
+   [:g (map render-stone (:stones game-state))]
+   [:g (map render-wood (:woods game-state))]
+   [:g (map render-bomb (vals (:bombs game-state)))]
+   [:g (map render-explosion (:explosions game-state))]
+   [:g (map render-player
+            (filter :alive? (vals (:players game-state))))]])
+
+(defmethod render :chat [chat]
+  (if (<= (count (:players chat)) 1)
+    [:div.text-center [:h1 "Waiting for more players!"]]
+    [:div.text-center [:h1 "Starting in " (:ticks-left chat) " seconds."]]))
 
 (defmethod render :status-msg [status]
   [:div.text-center [:h1 (:msg status)]])
@@ -156,28 +155,32 @@
 (def game-token
   (-> js/document
       (.getElementById "data")
-      (.getAttribute "data-game-info")
-      read-string))
+      (.getAttribute "data-game-info")))
 
-(println game-token)
+(def game-server
+  (-> js/document
+      (.getElementById "data")
+      (.getAttribute "data-game-server")))
 
 (defn sock-conn []
   (go
     (reset! game-state (status "Connecting..."))
-    (let [[action server game-id] game-token
-          {:keys [ws-channel]} (<! (ws-ch server))]
+    (let [{:keys [ws-channel]} (<! (ws-ch game-server))]
       (when ws-channel
         (reset! game-state (status "Fetching id..."))
         (let [[_ me] (:message (<! ws-channel))]
           (reset! game-state (status "Got id: " me ". Joining game."))
-          (>! ws-channel [action game-id])
+          (>! ws-channel game-token)
           (loop []
             (let [[v p] (alts! [ws-channel events-chan])]
               (println v)
               (if (= ws-channel p)
                 (reset! game-state (second (:message v)))
                 (>! ws-channel v)))
-            (recur)))))))
+            (recur))
+          (reset! game-state
+            (status
+              "Server disconnected. Maybe the game is full?")))))))
 
 (defn run []
   (do

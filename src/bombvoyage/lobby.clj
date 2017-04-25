@@ -6,9 +6,6 @@
             [bombvoyage.game :as g]
             [clojure.set :as s]))
 
-(defn log [x]
-  (do (println x) x))
-
 (defn game-type [state & _] (:type state))
 
 (defmulti join-game game-type)
@@ -80,12 +77,16 @@
     (submit-tick in (tick-len init-state))
     in))
 
-(defmethod join-game :game [game pid]
-  (when (< (count (:players game)) g/MAX-PLAYERS)
-    (g/add-player game pid)))
-
+(def CHAT-LEN 20)
+(defmethod join-game :game [game pid] nil)
 (defmethod tick-len :game [_] g/TICK-LEN)
-(defmethod tick :game [game] (g/tick game))
+(defmethod tick :game [game]
+  (let [nex (g/tick game)]
+    (if (g/game-over? nex)
+      {:type :chat
+       :ticks-left CHAT-LEN
+       :players (set (keys (:players game)))}
+      nex)))
 (defmethod on-action :game [game pid action]
   (match action
     [:drop-bomb] (g/drop-bomb game pid)
@@ -95,19 +96,25 @@
   (g/remove-player game pid))
 
 (defmethod join-game :chat [chat pid]
-  (when (< (count (:players chat)) g/MAX-PLAYERS)
-    (-> chat
-        (update :players conj pid))))
-
+  (let [players (count (:players chat))
+        added (update chat :players conj pid)
+        reset (assoc added :ticks-left CHAT-LEN)]
+    (cond
+      (= players g/MAX-PLAYERS) nil
+      (= 1 players) reset
+      :else added)))
 (defmethod tick-len :chat [_] 1000)
 (defmethod tick :chat [chat]
-  (if (< 1 (count (:players chat)))
-    (update chat :ticks-left dec)
-    chat))
+  (cond
+    (zero? (:ticks-left chat))
+      (reduce g/add-player (g/rand-game) (:players chat))
+    (< 1 (count (:players chat)))
+      (update chat :ticks-left dec)
+    :else chat))
 (defmethod on-action :chat [chat _ _] chat)
 (defmethod leave-game :chat [chat pid]
   (let [removed (update chat :players s/difference #{pid})
-        reset-ticks (assoc removed :ticks-left 10)]
+        reset-ticks (assoc removed :ticks-left 30)]
     (if (<= (count (:players chat)) 1)
       reset-ticks
       removed)))

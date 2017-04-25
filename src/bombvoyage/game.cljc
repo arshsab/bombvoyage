@@ -66,6 +66,7 @@
                 :pos (mapv * [TILE-SIZE TILE-SIZE] pos)
                 :dir :right
                 :moving false
+                :alive? true
                 :bombs INIT-BOMBS
                 :bomb-len INIT-LENGTH}]
     (assoc-in game [:players id] player)))
@@ -105,6 +106,9 @@
     (<= 0 x (dec WIDTH))
     (<= 0 y (dec HEIGHT))))
 
+(defn game-over? [game]
+  (<= (count (filter :alive? (vals (:players game)))) 1))
+
 ;; Actions
 
 (defn mk-bomb [pos len id]
@@ -121,7 +125,10 @@
         new-bomb (mk-bomb board-coords
                           (:bomb-len player)
                           (:id player))]
-    (if (or (zero? (:bombs player)) ((:bombs game) board-coords))
+    (if (or
+          (not (:alive? player))
+          (zero? (:bombs player))
+          ((:bombs game) board-coords))
       game
       (-> game
           (update :bombs assoc board-coords new-bomb)
@@ -147,6 +154,7 @@
         board-pos (map board-coord pos)
         nex-tile (map + board-pos (dir DELS))]
     (cond
+      (not (:alive? player)) player
       (not moving) player
       (and locked-x locked-y (not (valid? nex-tile invalid))) player
       (and (#{:left :right} dir) locked-y)
@@ -250,6 +258,17 @@
   "Does the pick-up op for each player in the game"
   (reduce-kv do-pick-up game (:players game)))
 
+(defn kill-player [game splodes id]
+  (let [pos (map board-coord (get-in game [:players id :pos]))]
+    (if (splodes pos)
+      (assoc-in game [:players id :alive?] false)
+      game)))
+
+(defn kill-player-transform [game]
+  (let [explosions (set (map :pos (:explosions game)))
+        players (keys (:players game))]
+    (reduce #(kill-player %1 explosions %2) game players)))
+
 (defn tick [game]
   "Does each transformation for one tick in the game"
   (-> game
@@ -257,4 +276,5 @@
       tick-down-bomb-transform
       tick-down-explosion-transform
       explode-bomb-transform
-      pick-up-transform))
+      pick-up-transform
+      kill-player-transform))
