@@ -11,10 +11,10 @@
             [bombvoyage.lobby :as l]
             [bombvoyage.game :as g]))
 
-(def me "localhost:8081")
 (def players (atom 0))
 (def game-tokens (atom {}))
 (def init-chat {:type :chat :ticks-left 10 :players #{}})
+(def ^:dynamic *config* nil)
 
 (defn make-game [game-id pid pchan]
   (let [completion-fn #(swap! game-tokens dissoc game-id)
@@ -31,7 +31,9 @@
         (>! ws-ch [:set-id player-id])
         (let [payload (:message (<! ws-ch))
               decoded (str->jwt payload)]
-
+          (println payload)
+          (println decoded)
+          (println (verify decoded "secret2"))
           (if (verify decoded "secret2")
             (match (get-in decoded [:claims :game-token])
               ["create" game-id]
@@ -43,11 +45,12 @@
                    (println (:claims decoded)))))))))
 
 (defn run [config]
+  (alter-var-root (var *config*) (fn [_] config))
   (run-server
     (routes
       (GET "/" []
              (let [tokens @game-tokens]
-               (str (zipmap (keys tokens) (repeat me)))))
+               (str (zipmap (keys tokens) (repeat (:me *config*))))))
       (GET "/ws" [] sock-handler)
       (route/resources "/")
       (route/not-found "<h1>Page not found</h1>"))

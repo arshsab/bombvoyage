@@ -24,6 +24,7 @@
            (map read-string)
            (reduce merge)
            (reset! games))
+      (println @games)
       (<!! (timeout 2000))
       (recur))))
 
