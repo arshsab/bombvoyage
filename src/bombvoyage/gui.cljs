@@ -11,8 +11,11 @@
 
 (enable-console-print!)
 
-(def MY-ID 21)
-(def game-state (r/atom (g/rand-game)))
+(defn status [& args]
+  {:type :status-msg
+   :msg (apply str args)})
+
+(def game-state (r/atom (status "Setting up page")))
 
 (defn render-wood [[x y]] ^{:key (str [x y])}
   [:rect {:x (* g/TILE-SIZE x)
@@ -73,7 +76,8 @@
               :height g/TILE-SIZE
               :fill "rgb(255, 40, 40)"}])))
 
-(defn render-game [game-state]
+(defmulti render :type)
+(defmethod render :game [game-state]
   [:svg
    {:width (* g/TILE-SIZE g/WIDTH)
     :height (* g/TILE-SIZE g/HEIGHT)}
@@ -81,21 +85,30 @@
            :height (* g/TILE-SIZE g/HEIGHT)
            :fill "#8cff8c"}]
    [:g
-    (map render-length-up (:length-ups @game-state))]
+    (map render-length-up (:length-ups game-state))]
    [:g
-    (map render-bomb-up (:bomb-ups @game-state))]
+    (map render-bomb-up (:bomb-ups game-state))]
    [:g
-    (map render-stone (:stones @game-state))]
+    (map render-stone (:stones game-state))]
    [:g
-    (map render-wood (:woods @game-state))]
+    (map render-wood (:woods game-state))]
    [:g
-    (map render-bomb (vals (:bombs @game-state)))]
+    (map render-bomb (vals (:bombs game-state)))]
    [:g
-    (map render-explosion (:explosions @game-state))]
+    (map render-explosion (:explosions game-state))]
    [:g
-    (map render-player (vals (:players @game-state)))]])
+    (map render-player (vals (:players game-state)))]])
 
-(r/render [render-game game-state] (js/document.getElementById "app"))
+(defmethod render :status-msg [status]
+  [:div.text-center [:h1 (:msg status)]])
+
+(defmethod render :default [state]
+  [:div.text-center [:h1 "State: " (str state)]])
+
+(defn render-state [state]
+  [render @state])
+
+(r/render [render-state game-state] (js/document.getElementById "app"))
 
 (defn get-key [e]
   "returns the key that was pressed from an event"
@@ -150,11 +163,13 @@
 
 (defn sock-conn []
   (go
+    (reset! game-state (status "Connecting..."))
     (let [[action server game-id] game-token
           {:keys [ws-channel]} (<! (ws-ch server))]
-      (if ws-channel
+      (when ws-channel
+        (reset! game-state (status "Fetching id..."))
         (let [[_ me] (:message (<! ws-channel))]
-          (println "I am" me)
+          (reset! game-state (status "Got id: " me ". Joining game."))
           (>! ws-channel [action game-id])
           (loop []
             (let [[v p] (alts! [ws-channel events-chan])]

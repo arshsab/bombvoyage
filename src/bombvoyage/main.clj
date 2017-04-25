@@ -1,6 +1,7 @@
 (ns bombvoyage.main
   (:require [bombvoyage.fileserv :as f]
-            [bombvoyage.sockserv :as s]))
+            [bombvoyage.sockserv :as s])
+  (:gen-class))
 
 (defn -main [& args]
   (case (first args)

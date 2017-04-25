@@ -6,8 +6,7 @@
             [clj-http.client :as client]
             [compojure.route :as route]
             [hiccup.core :refer [html]]
-            [bombvoyage.game :as g])
-  (:gen-class))
+            [bombvoyage.game :as g]))
 
 (def game-ticker (atom 0))
 (def games (atom {}))
@@ -26,49 +25,46 @@
       (<!! (timeout 2000))
       (recur))))
 
-(defn index []
+(defn wrap-body [body]
   (html
     [:html
-     [:head]
+     [:head
+      [:link {:rel :stylesheet
+              :type "text/css"
+              :href "https://maxcdn.bootstrapcdn.com/bootswatch/3.3.7/cyborg/bootstrap.min.css"}]]
      [:body {:font-size "250%"}
-      [:p [:a {:href "/create"} "Create"]]
+      [:div.container
+       [:div.page-header [:h1 "BombVoyage"]]
+       body]]]))
+
+(defn index []
+  (wrap-body
+    [:div
+      [:p.text-center [:a.btn.btn-success {:type :button :href "/create"} "Create"]]
       (for [[game-id _] @games]
-        [:p [:a
+        [:p.text-center [:a.btn.btn-info
           {:href (str "/game/" game-id)}
-          "Join Game #" game-id]])]]))
+          "Join Game #" game-id]])]))
+
+(defn game-screen [token]
+  (wrap-body
+     [:div.text-center
+      [:span#data {:data-game-info (prn-str token)}]
+      [:div#app]
+      [:script {:src "/main.js"}]]))
 
 (defn create []
   (let [game-id (swap! game-ticker inc)
         server (rand-nth game-servers)]
-    (html
-      [:html
-       [:head]
-       [:body {:style "background-color: 050002"}
-        [:span#data {:data-game-info
-                      (prn-str
-                        [:create
-                         (str "ws://" server "/ws")
-                         game-id])}]
-        [:div#app {:style "width: 50%; margin: 0 auto"}]
-        [:script {:src "main.js"}]]])))
+    (game-screen [:create (str "ws://" server "/ws") game-id])))
 
-(defn game [game-id]
-  (html
-    [:html
-     [:head]
-     [:body {:style "background-color: 050002"}
-      [:span#data {:data-game-info
-                   (let [server (@games game-id)]
-                      (prn-str
-                        [:join
-                         (str "ws://" server "/ws")
-                         game-id]))}]
-      [:div#app {:style "width: 50%; margin: 0 auto"}]
-      [:script {:src "/main.js"}]]]))
+(defn join [game-id]
+  (let [server (@games game-id)]
+    (game-screen [:join (str "ws://" server "/ws") game-id])))
 
 (defroutes app-routes
   (GET "/" [] (index))
-  (GET "/game/:id" [id] (game (read-string id)))
+  (GET "/game/:id" [id] (join (read-string id)))
   (GET "/create" [] (create))
   (route/resources "/")
   (route/not-found "<h1>Page not found</h1>"))

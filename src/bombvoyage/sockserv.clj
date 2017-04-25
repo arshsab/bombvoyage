@@ -8,8 +8,7 @@
             [compojure.route :as route]
             [compojure.core :refer :all]
             [bombvoyage.lobby :as l]
-            [bombvoyage.game :as g])
-  (:gen-class))
+            [bombvoyage.game :as g]))
 
 (def me "localhost:8081")
 (def players (atom 0))
