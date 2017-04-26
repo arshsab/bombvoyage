@@ -1,3 +1,4 @@
 {:serv-type :fileserv
  :game-servers ["localhost:8081"]
+ :secret "super-duper-secret"
  :port 8080}

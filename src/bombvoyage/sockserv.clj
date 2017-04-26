@@ -31,10 +31,9 @@
         (>! ws-ch [:set-id player-id])
         (let [payload (:message (<! ws-ch))
               decoded (str->jwt payload)]
-          (println payload)
-          (println decoded)
-          (println (verify decoded "secret2"))
-          (if (verify decoded "secret2")
+          (println (:claims decoded))
+          (println (verify decoded (:secret *config*)))
+          (if (verify decoded (:secret *config*))
             (match (get-in decoded [:claims :game-token])
               ["create" game-id]
                    (make-game game-id player-id ws-ch)

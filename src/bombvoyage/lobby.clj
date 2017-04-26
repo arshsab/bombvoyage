@@ -113,8 +113,4 @@
     :else chat))
 (defmethod on-action :chat [chat _ _] chat)
 (defmethod leave-game :chat [chat pid]
-  (let [removed (update chat :players s/difference #{pid})
-        reset-ticks (assoc removed :ticks-left 30)]
-    (if (<= (count (:players chat)) 1)
-      reset-ticks
-      removed)))
+  (update chat :players s/difference #{pid}))

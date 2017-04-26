@@ -1,3 +1,4 @@
 {:serv-type :gameserv
  :me "localhost:8081"
+ :secret "super-duper-secret"
  :port 8081}

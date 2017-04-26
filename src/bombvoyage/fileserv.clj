@@ -12,12 +12,13 @@
 
 (def game-ticker (atom 0))
 (def games (atom {}))
-(def ^:dynamic *game-servers* [])
+(def ^:dynamic *config* nil)
 
 (defn start-game-update-loop []
   (thread
     (loop []
-      (->> *game-servers*
+      (->> *config*
+           :game-servers
            (map #(str "http://" %))
            (map client/get)
            (map :body)
@@ -52,7 +53,7 @@
   (let [payload
           {:game-token token
            :exp (t/plus (t/now) (t/seconds 5))}
-        encoded (-> payload jwt (sign "secret2") to-str)]
+        encoded (-> payload jwt (sign (:secret *config*)) to-str)]
     (wrap-body
        [:div.text-center
         [:span#data {:data-game-server server
@@ -62,7 +63,7 @@
 
 (defn create []
   (let [game-id (swap! game-ticker inc)
-        server (rand-nth *game-servers*)]
+        server (rand-nth (:game-servers *config*))]
     (game-screen [:create game-id] (str "ws://" server "/ws"))))
 
 (defn join [game-id]
@@ -81,8 +82,8 @@
 (defn run [config]
   (do
     (alter-var-root
-      (var *game-servers*)
-      (fn [_] (:game-servers config)))
+      (var *config*)
+      (fn [_] config))
     (start-game-update-loop)
     (run-server
       handler
