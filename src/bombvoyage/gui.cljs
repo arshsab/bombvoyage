@@ -11,11 +11,18 @@
 
 (enable-console-print!)
 
-(defn status [& args]
-  {:type :status-msg
-   :msg (apply str args)})
+(defn log [& args]
+  (println (apply str args))
+  (first args))
 
-(def game-state (r/atom (status "Setting up page")))
+(def game-state (r/atom nil))
+
+(defn set-status! [& args]
+  (reset! game-state
+          {:type :status-msg
+           :msg (apply str args)}))
+
+(set-status! "Setting up page!")
 
 (defn render-wood [[x y]] ^{:key (str [x y])}
   [:rect {:x (* g/TILE-SIZE x)
@@ -166,23 +173,21 @@
 
 (defn sock-conn []
   (go
-    (reset! game-state (status "Connecting..."))
-    (let [{:keys [ws-channel]} (<! (ws-ch game-server))]
-      (when ws-channel
-        (reset! game-state (status "Fetching id..."))
-        (let [[_ me] (:message (<! ws-channel))]
-          (reset! game-state (status "Got id: " me ". Joining game."))
-          (>! ws-channel game-token)
-          (loop []
-            (let [[v p] (alts! [ws-channel events-chan])]
-              (println v)
-              (if (= ws-channel p)
+    (set-status! "Connecting...")
+    (when-let [ws-ch (:ws-channel (log (<! (ws-ch game-server))))]
+      (set-status! "Sending the game-token")
+      (>! ws-ch game-token)
+      (set-status! "Getting my player id")
+      (let [[_ me] (:message (<! ws-ch))]
+        (set-status! "Got id: " me ". Syncing state to server...")
+        (loop []
+          (let [[v p] (alts! [ws-ch events-chan])]
+            (when-not (and (nil? v) (= ws-ch p))
+              (if (= ws-ch p)
                 (reset! game-state (second (:message v)))
-                (>! ws-channel v)))
-            (recur))
-          (reset! game-state
-            (status
-              "Server disconnected. Maybe the game is full?")))))))
+                (>! ws-ch v))
+              (recur))))
+        (set-status! "Disconnected! Maybe the game is full?")))))
 
 (defn run []
   (do
