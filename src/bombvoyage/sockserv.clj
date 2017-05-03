@@ -14,7 +14,6 @@
 
 (def players (atom 0))
 (def lobby-tokens (atom {}))
-(def init-chat {:type :chat :ticks-left 10 :players #{}})
 (def ^:dynamic *config* nil)
 
 (defn player-middleware
@@ -37,58 +36,78 @@
   (a/admix mix (player-middleware pid pchan))
   (a/tap mult pchan))
 
-(defn submit-tick [in tick]
+(defn submit-tick [in state-type]
   "Submits a tick to the game after a delay."
-  (go
-    (<! (timeout tick))
-    (>! in [:tick])))
+  (let [tick (get-in l/specs [state-type :tick-len])]
+    (go
+      (<! (timeout tick))
+      (>! in [:tick state-type]))))
 
-(defn lobby-loop [init-state in out sub]
-  "Starts the game loop with the init-state"
-  (go-loop [state init-state players #{}]
-    (match (<! in)
-      [:join pid pchan]
-          (if-let [nex (l/join-game state pid)]
-            (do (subscribe pid pchan sub)
-                (>! out [:set-state nex])
-                (recur nex (conj players pid)))
-            (do (close! pchan)
-                (recur state players)))
-      [:close pid]
-          (let [nex (l/leave-game state pid)
-                nex-players (s/difference players #{pid})]
-            (>! out [:set-state nex])
-            (when-not (empty? nex-players)
-              (recur nex nex-players)))
-      [:tick]
-          (let [nex (l/tick state)]
-            (>! out [:set-state nex])
-            (submit-tick in (l/tick-len nex))
-            (recur nex players))
-      [:message pid body]
-          (let [nex (l/on-action state pid body)]
-            (>! out [:set-state nex])
-            (recur nex players)))))
+(defn get-fn [state func] (get-in l/specs [(:type state) func]))
+(defn tick-len [state] (get-fn state :tick-len))
+(defn max-players [state] (get-fn state :max-players))
+(defn tick-fn [state] ((get-fn state :tick-fn) state))
+(defn complete? [state] ((get-fn state :complete?) state))
+(defn join-fn [state pid] ((get-fn state :join-fn) state pid))
+(defn leave-fn [state pid] ((get-fn state :leave-fn) state pid))
+(defn action-fn [state pid action]
+  ((get-fn state :action-fn) state pid action))
+(defn transition-state [state in players]
+  (let [next-type (get-fn state :next-spec)
+        next-init (get-in l/specs [next-type :init-fn])
+        next-state (next-init players state)]
+    (submit-tick in next-type)
+    next-state))
 
-(defn run-lobby-loop [init-state completion-fn]
+(defn lobby-loop
+  "Starts the game loop with init-state & players"
+  [init-state init-players in out sub]
+  (go-loop [state init-state players init-players]
+    (when-not (empty? players)
+      (println state players)
+      (>! out [:set-state state])
+      (if (complete? state)
+        (recur (transition-state state in players) players)
+        (match (<! in)
+          [:join pid pchan]
+             (if (< (count players) (max-players state))
+               (do (subscribe pid pchan sub)
+                   (recur (join-fn state pid) (conj players pid)))
+               (do (close! pchan)
+                   (recur state players)))
+          [:close pid]
+             (recur
+               (leave-fn state pid)
+               (s/difference players #{pid}))
+          [:tick state-type]
+             (if (= state-type (:type state))
+               (do
+                 (submit-tick in (:type state))
+                 (recur (tick-fn state) players))
+               (recur state players))
+          [:message pid body]
+             (recur (action-fn state pid body) players))))))
+
+(defn run-lobby-loop [init-pid init-pchan completion-fn]
   "Runs the game loop, starts the ticks and cleans up after"
   (let [in (chan)
         out (chan)
-        sub [(a/mix in) (a/mult out)]]
+        sub [(a/mix in) (a/mult out)]
+        init-state ((:init-fn l/init-spec) #{init-pid} nil)]
     (go
-      (<! (lobby-loop init-state in out sub))
+      (subscribe init-pid init-pchan sub)
+      (<! (lobby-loop init-state #{init-pid} in out sub))
       (close! in)
       (close! out)
       (completion-fn))
-    (submit-tick in (l/tick-len init-state))
+    (submit-tick in (:type init-state))
     in))
 
 (defn make-lobby [lobby-id pid pchan]
   "Makes a game and joins the player to the game"
   (let [completion-fn #(swap! lobby-tokens dissoc lobby-id)
-        lobby-in (run-lobby-loop init-chat completion-fn)]
-    (swap! lobby-tokens assoc lobby-id lobby-in)
-    (go (>! lobby-in [:join pid pchan]))))
+        lobby-in (run-lobby-loop pid pchan completion-fn)]
+    (swap! lobby-tokens assoc lobby-id lobby-in)))
 
 (defn sock-handler
   "Handles incoming websockets."

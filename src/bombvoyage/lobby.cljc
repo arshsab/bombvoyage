@@ -4,57 +4,88 @@
             [bombvoyage.game :as g]
             [clojure.set :as s]))
 
-(def game-spec
-  {:tick-len 30
-   :tick-fn g/tick
-   :max-players 4
-   :join-fn (constantly nil)
-   :leave-fn g/remove-player
-   :complete? g/game-over?
-   :next-state :game-over})
+(defn identity2 [x & _] x)
 
-(defn game-type [state & _] (:type state))
+(defn chat-tick [state]
+  (if (> (:players state) 1)
+    (update state :ticks-left dec)
+    state))
 
-(defmulti join-game game-type)
-(defmulti tick-len game-type)
-(defmulti tick game-type)
-(defmulti on-action game-type)
-(defmulti leave-game game-type)
+(defn chat-join [state pid]
+  (let [nex-state (update state :players inc)]
+    (if (= 1 (:players state))
+      (assoc nex-state :ticks-left 20)
+      nex-state)))
 
-(def CHAT-LEN 20)
-(defmethod join-game :game [game pid] nil)
-(defmethod tick-len :game [_] g/TICK-LEN)
-(defmethod tick :game [game]
-  (let [nex (g/tick game)]
-    (if (g/game-over? nex)
-      {:type :chat
-       :ticks-left CHAT-LEN
-       :players (set (keys (:players game)))}
-      nex)))
-(defmethod on-action :game [game pid action]
+(defn chat-leave [state pid]
+  (let [nex-state (update state :players inc)]
+    (if (= 1 (:players nex-state))
+      (assoc nex-state :ticks-left 20)
+      nex-state)))
+
+(defn chat-on-action [state pid action]
+  (match action
+    [:post message]
+       (->> (:messages state)
+            (cons message)
+            (take 10)
+            (assoc state :messages))
+    :else state))
+
+(defn chat-over? [state]
+  (zero? (:ticks-left state)))
+
+(defn game-on-action [game pid action]
   (match action
     [:drop-bomb] (g/drop-bomb game pid)
     [:start-moving dir] (g/start-moving game pid dir)
-    [:stop-moving] (g/stop-moving game pid)))
-(defmethod leave-game :game [game pid]
-  (g/remove-player game pid))
+    [:stop-moving] (g/stop-moving game pid)
+    :else game))
 
-(defmethod join-game :chat [chat pid]
-  (let [players (count (:players chat))
-        added (update chat :players conj pid)
-        reset (assoc added :ticks-left CHAT-LEN)]
-    (cond
-      (= players g/MAX-PLAYERS) nil
-      (= 1 players) reset
-      :else added)))
-(defmethod tick-len :chat [_] 1000)
-(defmethod tick :chat [chat]
-  (cond
-    (zero? (:ticks-left chat))
-      (reduce g/add-player (g/rand-game) (:players chat))
-    (< 1 (count (:players chat)))
-      (update chat :ticks-left dec)
-    :else chat))
-(defmethod on-action :chat [chat _ _] chat)
-(defmethod leave-game :chat [chat pid]
-  (update chat :players s/difference #{pid}))
+(def game-spec
+  {:tick-len 30
+   :init-fn (fn [player-ids _] (g/rand-game player-ids))
+   :tick-fn g/tick
+   :max-players 4
+   :join-fn identity2
+   :leave-fn g/remove-player
+   :complete? g/game-over?
+   :action-fn game-on-action
+   :next-spec :game-over})
+
+(def game-over-spec
+  {:tick-len 6000
+   :init-fn
+      (fn [player-ids last-state]
+        {:type :game-over
+         :players player-ids
+         :last-state last-state
+         :ticked? false})
+   :tick-fn #(assoc % :ticked? true)
+   :max-players 4
+   :join-fn identity2
+   :leave-fn identity2
+   :action-fn identity2
+   :complete? :ticked?
+   :next-spec :chat})
+
+(def chat-spec
+  {:tick-len 1000
+   :init-fn
+      (fn [pids _]
+        {:type :chat
+         :players (count pids)
+         :messages []
+         :ticks-left 20})
+   :tick-fn chat-tick
+   :max-players 4
+   :join-fn chat-join
+   :leave-fn chat-leave
+   :action-fn chat-on-action
+   :complete? chat-over?
+   :next-spec :game})
+
+(def specs {:game game-spec
+            :game-over game-over-spec
+            :chat chat-spec})
+(def init-spec chat-spec)

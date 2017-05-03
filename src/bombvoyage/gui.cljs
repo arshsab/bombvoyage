@@ -101,11 +101,11 @@
             (filter :alive? (vals (:players game-state))))]])
 
 (defmethod render :chat [chat]
-  (if (<= (count (:players chat)) 1)
+  (if (<= (:players chat) 1)
     [:div.text-center [:h1 "Waiting for more players!"]]
     [:div.text-center
      [:h1 "Starting in " (:ticks-left chat) " seconds."]
-     [:h1 "Players in game: " (count (:players chat))]]))
+     [:h1 "Players in game: " (:players chat)]]))
 
 (defmethod render :status-msg [status]
   [:div.text-center [:h1 (:msg status)]])
@@ -183,6 +183,7 @@
         (loop []
           (let [[v p] (alts! [ws-ch events-chan])]
             (when-not (and (nil? v) (= ws-ch p))
+              (println v)
               (if (= ws-ch p)
                 (reset! game-state (second (:message v)))
                 (>! ws-ch v))

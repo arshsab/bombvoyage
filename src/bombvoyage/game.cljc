@@ -1,5 +1,7 @@
 (ns bombvoyage.game
-  (:require [clojure.set :as s]))
+  (:require #?(:clj  [clojure.core.match :refer [match]]
+               :cljs [cljs.core.match :refer-macros [match]])
+            [clojure.set :as s]))
 
 ;; Settings
 
@@ -28,35 +30,6 @@
        (take subset-size)
        set))
 
-(defn rand-game
-  "Makes a random board configuration."
-  []
-  (let [all-tiles
-          (set (for [x (range WIDTH) y (range HEIGHT)] [x y]))
-        stones
-          (s/select (fn [[x y]] (and (odd? x) (odd? y))) all-tiles)
-        no-wood
-          (set (for [pos INIT-POS
-                     diff (vals DELS)]
-                 (map + diff pos)))
-        woods
-          (->> (s/union no-wood stones)
-               (s/difference all-tiles)
-               (rand-subset WOODS))
-        bomb-ups
-          (rand-subset POWER-UPS woods)
-        length-ups
-          (rand-subset POWER-UPS (s/difference woods bomb-ups))]
-    {:tick 0
-     :type :game
-     :stones stones
-     :woods woods
-     :bomb-ups bomb-ups
-     :length-ups length-ups
-     :explosions []
-     :bombs {}
-     :players {}}))
-
 (defn add-player
   "Adds a player to a game."
   [game id]
@@ -70,6 +43,38 @@
                 :bombs INIT-BOMBS
                 :bomb-len INIT-LENGTH}]
     (assoc-in game [:players id] player)))
+
+(defn rand-game
+  "Makes a random board configuration."
+  ([player-ids]
+    (reduce add-player (rand-game) player-ids))
+  ([]
+    (let [all-tiles
+            (set (for [x (range WIDTH) y (range HEIGHT)] [x y]))
+          stones
+            (s/select (fn [[x y]] (and (odd? x) (odd? y))) all-tiles)
+          no-wood
+            (set (for [pos INIT-POS
+                       diff (vals DELS)]
+                   (map + diff pos)))
+          woods
+            (->> (s/union no-wood stones)
+                 (s/difference all-tiles)
+                 (rand-subset WOODS))
+          bomb-ups
+            (rand-subset POWER-UPS woods)
+          length-ups
+            (rand-subset POWER-UPS (s/difference woods bomb-ups))]
+      {:tick 0
+       :type :game
+       :stones stones
+       :woods woods
+       :bomb-ups bomb-ups
+       :length-ups length-ups
+       :explosions []
+       :bombs {}
+       :players {}})))
+
 
 (defn remove-player
   "Removes a player from the game."
@@ -278,3 +283,4 @@
       explode-bomb-transform
       pick-up-transform
       kill-player-transform))
+
