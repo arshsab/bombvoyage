@@ -6,7 +6,7 @@ A multiplayer game based on Balloono (which was based on Bomberman). Work in pro
 
 Clone the repository and install leiningen.
 
-## Usage
+## Run
 
 ```
 lein cljsbuild once
