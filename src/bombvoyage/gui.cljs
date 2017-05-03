@@ -1,6 +1,6 @@
 (ns bombvoyage.gui
   (:require-macros [cljs.core.async.macros :refer [go go-loop]])
-  (:require [bombvoyage.game :as g]
+  (:require [bombvoyage.game.logic :as g]
             [clojure.set :as s]
             [cljs.reader :refer [read-string]]
             [goog.dom :as dom]
@@ -9,6 +9,9 @@
             [cljs.core.async :refer [<! >! put! chan timeout]]
             [reagent.core :as r]))
 
+(def keys-chan (chan))
+(def events-chan (chan))
+
 (enable-console-print!)
 
 (defn log [& args]
@@ -16,6 +19,7 @@
   (first args))
 
 (def game-state (r/atom nil))
+(def id (atom nil))
 
 (defn set-status! [& args]
   (reset! game-state
@@ -83,8 +87,7 @@
               :height g/TILE-SIZE
               :fill "rgb(255, 40, 40)"}])))
 
-(defmulti render :type)
-(defmethod render :game [game-state]
+(defn render-game [game-state show-dead?]
   [:svg
    {:width (* g/TILE-SIZE g/WIDTH)
     :height (* g/TILE-SIZE g/HEIGHT)}
@@ -98,14 +101,50 @@
    [:g (map render-bomb (vals (:bombs game-state)))]
    [:g (map render-explosion (:explosions game-state))]
    [:g (map render-player
-            (filter :alive? (vals (:players game-state))))]])
+            (filter
+              #(or show-dead? (:alive? %))
+              (vals (:players game-state))))]])
+
+(defmulti render :type)
+(defmethod render :game [game-state]
+  (render-game game-state false))
+
+(defn render-reply-box []
+  (let [text (r/atom "")]
+    (fn [] ^{:key "reply-box"}
+      [:div.input-group
+        [:input.form-control
+         {:type :text
+          :value @text
+          :on-change #(reset! text (-> % .-target .-value))
+          :placeholder "Reply..."}]
+        [:span.input-group-btn
+          [:button.btn.btn-default
+           {:type :button
+            :on-click #(go
+                         (>! events-chan [:post @text])
+                         (reset! text ""))}
+            "Reply"]]])))
+
+(defn render-message [msg] ^{:key (str msg)}
+  [:li.list-group-item msg])
 
 (defmethod render :chat [chat]
   (if (<= (:players chat) 1)
     [:div.text-center [:h1 "Waiting for more players!"]]
-    [:div.text-center
+    [:div.text-center.col-md-6.col-md-offset-3
      [:h1 "Starting in " (:ticks-left chat) " seconds."]
-     [:h1 "Players in game: " (:players chat)]]))
+     [:h1 "Players in game: " (:players chat)]
+     [:ul.list-group 
+       (map render-message (reverse (:messages chat)))]
+     [render-reply-box]]))
+
+(defmethod render :game-over [{state :last-state}]
+  [:div.text-center [:h1 "Game Over"]
+   (if-let [rank (get-in state [:ranks @id])]
+     [:h1 "You were rank #" (- (count (:players state)) rank)]
+     [:h1 "You won!"])
+   (render-game state true)])
 
 (defmethod render :status-msg [status]
   [:div.text-center [:h1 (:msg status)]])
@@ -120,7 +159,7 @@
 
 (defn get-key [e]
   "returns the key that was pressed from an event"
-  (case (do (.preventDefault e) (.-keyCode e))
+  (case (.-keyCode e)
     37 :left
     38 :up
     39 :right
@@ -128,8 +167,6 @@
     32 :space
     nil))
 
-(def keys-chan (chan))
-(def events-chan (chan))
 
 (defn handle-key-press [e action]
   "dispatches a key press to the event loop"
@@ -147,6 +184,8 @@
   (go-loop [pressed nil]
     (let [[action dir] (<! keys-chan)]
       (cond
+        (not= :game (:type @game-state))
+          (recur nil)
         (= [:down :space] [action dir])
             (do
               (>! events-chan [:drop-bomb])
@@ -179,6 +218,8 @@
       (>! ws-ch game-token)
       (set-status! "Getting my player id")
       (let [[_ me] (:message (<! ws-ch))]
+        (println me)
+        (reset! id me)
         (set-status! "Got id: " me ". Syncing state to server...")
         (loop []
           (let [[v p] (alts! [ws-ch events-chan])]

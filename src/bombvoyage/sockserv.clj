@@ -5,12 +5,11 @@
                                 :as a]
             [clojure.core.match :refer [match]]
             [compojure.handler :refer [site]]
-            [clojure.set :as s]
+            [clojure.set]
             [clj-jwt.core :refer :all]
             [compojure.route :as route]
             [compojure.core :refer :all]
-            [bombvoyage.lobby :as l]
-            [bombvoyage.game :as g]))
+            [bombvoyage.specs :as s]))
 
 (def players (atom 0))
 (def lobby-tokens (atom {}))
@@ -38,12 +37,12 @@
 
 (defn submit-tick [in state-type]
   "Submits a tick to the game after a delay."
-  (let [tick (get-in l/specs [state-type :tick-len])]
+  (let [tick (get-in s/specs [state-type :tick-len])]
     (go
       (<! (timeout tick))
       (>! in [:tick state-type]))))
 
-(defn get-fn [state func] (get-in l/specs [(:type state) func]))
+(defn get-fn [state func] (get-in s/specs [(:type state) func]))
 (defn tick-len [state] (get-fn state :tick-len))
 (defn max-players [state] (get-fn state :max-players))
 (defn tick-fn [state] ((get-fn state :tick-fn) state))
@@ -54,7 +53,7 @@
   ((get-fn state :action-fn) state pid action))
 (defn transition-state [state in players]
   (let [next-type (get-fn state :next-spec)
-        next-init (get-in l/specs [next-type :init-fn])
+        next-init (get-in s/specs [next-type :init-fn])
         next-state (next-init players state)]
     (submit-tick in next-type)
     next-state))
@@ -64,7 +63,6 @@
   [init-state init-players in out sub]
   (go-loop [state init-state players init-players]
     (when-not (empty? players)
-      (println state players)
       (>! out [:set-state state])
       (if (complete? state)
         (recur (transition-state state in players) players)
@@ -78,7 +76,7 @@
           [:close pid]
              (recur
                (leave-fn state pid)
-               (s/difference players #{pid}))
+               (clojure.set/difference players #{pid}))
           [:tick state-type]
              (if (= state-type (:type state))
                (do
@@ -93,7 +91,7 @@
   (let [in (chan)
         out (chan)
         sub [(a/mix in) (a/mult out)]
-        init-state ((:init-fn l/init-spec) #{init-pid} nil)]
+        init-state ((:init-fn s/init-spec) #{init-pid} nil)]
     (go
       (subscribe init-pid init-pchan sub)
       (<! (lobby-loop init-state #{init-pid} in out sub))

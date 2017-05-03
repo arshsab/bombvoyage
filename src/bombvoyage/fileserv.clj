@@ -7,8 +7,7 @@
             [clj-time.core :as t]
             [clj-jwt.core :refer :all]
             [compojure.route :as route]
-            [hiccup.core :refer [html]]
-            [bombvoyage.game :as g]))
+            [hiccup.core :refer [html]]))
 
 (def game-ticker (atom 0))
 (def games (atom {}))

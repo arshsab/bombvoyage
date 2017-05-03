@@ -1,7 +1,5 @@
-(ns bombvoyage.game
-  (:require #?(:clj  [clojure.core.match :refer [match]]
-               :cljs [cljs.core.match :refer-macros [match]])
-            [clojure.set :as s]))
+(ns bombvoyage.game.logic
+  (:require  [clojure.set :as s]))
 
 ;; Settings
 
@@ -72,14 +70,21 @@
        :bomb-ups bomb-ups
        :length-ups length-ups
        :explosions []
+       :ranks {}
        :bombs {}
        :players {}})))
 
+(defn mark-dead [game id]
+  (if (get-in game [:players id :alive?])
+    (-> game
+        (assoc-in [:players id :alive?] false)
+        (assoc-in [:ranks id] (count (:ranks game))))
+    game))
 
 (defn remove-player
   "Removes a player from the game."
   [game id]
-  (update game :players dissoc id))
+  (mark-dead game id))
 
 ;; Util
 
@@ -266,7 +271,7 @@
 (defn kill-player [game splodes id]
   (let [pos (map board-coord (get-in game [:players id :pos]))]
     (if (splodes pos)
-      (assoc-in game [:players id :alive?] false)
+      (mark-dead game id)
       game)))
 
 (defn kill-player-transform [game]
@@ -283,4 +288,3 @@
       explode-bomb-transform
       pick-up-transform
       kill-player-transform))
-
